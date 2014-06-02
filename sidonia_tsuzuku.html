@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SIDONIA</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="dist/paper-full.js"></script>
+  <script src="third-party/stats.min.js"></script>
+  <script src="third-party/tween.js"></script>
+  <style>
+    #assets {
+      display: none;
+    }
+    body {
+      background-color: black;
+    }
+    #reload {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 100px;
+      height: 30px;
+    }
+    #reload a {
+      display: block;
+      text-align: center;
+      line-height: 30px;
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 12px;
+
+      color: #666666;
+    }
+    #reload a:hover {
+      color: #aaaaaa;
+    }
+  </style>
+  <script type="text/paperscript" canvas="canvas">
+    // debugger;  // to use developper tools of Chrome.
+
+    // stats.js
+    var stats = new Stats();
+    stats.setMode(0);
+    stats.domElement.style.position = 'absolute';
+    stats.domElement.style.left = '0px';
+    stats.domElement.style.top = '0px';
+    document.body.appendChild( stats.domElement );
+
+    var text = project.importSVG(document.getElementById('svg'));
+    text.visible = false;
+
+    // base rect (no need)
+    var baseRect = new Path.Rectangle(new Point(0, 0), new Size(600, 200));
+
+    // reserve certain amount of area to keep group's center is view's center
+    var coveringRect = new Path.Rectangle(new Point(-100, -100), new Size(800, 400));
+    // coveringRect.strokeColor = "white";
+    // coveringRect.strokeWidth = 1;
+    // coveringRect.dashArray = [10,12];
+
+    var cross = new Group();
+    var hLine = new Path({
+      segments: [[-15, 0],[15,0]],
+      strokeWidth: 6,
+      strokeColor: 'white'
+    });
+    var vLine = hLine.clone().rotate(90);
+    cross.addChildren([hLine, vLine]);
+    var CrossSymbol = new Symbol(cross);
+    cross.remove();
+
+    var mainRect = new Path.Rectangle(new Point(0,0), new Size(0,0));
+    mainRect.strokeWidth = 2;
+    mainRect.strokeColor = "white";
+
+    // wrap in a Group to centering and opacity.
+    var resultGroup = new Group();
+    var group = new Group(coveringRect, baseRect, text, resultGroup, mainRect);
+
+    // crosses
+    var crossLT = CrossSymbol.place(new Point(0, 100));
+    var crossLB = CrossSymbol.place(new Point(0, 100));
+    var crossRT = CrossSymbol.place(new Point(0, 0));
+    var crossRB = CrossSymbol.place(new Point(0, 200));
+    group.addChildren([crossLT, crossLB, crossRT, crossRB]);
+    crossRT.visible = crossRB.visible = false;
+
+    // Line Symbol
+    var _line = new Path.Line( new Point(0, 0), new Point(0, 200) );
+    _line.strokeWidth = 2;
+    _line.strokeColor = "white";
+    var crossLineT = CrossSymbol.place(_line.segments[0].point);
+    var crossLineB = CrossSymbol.place(_line.segments[1].point);
+    var lineSet = new Group( _line, crossLineT, crossLineB );
+
+    // create line
+    var SLine = new Symbol(lineSet);
+    var line1 = SLine.place(new Point(200, 100));
+    var line2 = SLine.place(new Point(400, 100));
+    group.addChildren([line1, line2]);
+    line1.visible = line2.visible = false;
+
+    // centering objects.
+    group.position = view.center;
+
+    // prepare tween
+    var size = new Size(1,1);
+    var origin = group.position - new Point( text.bounds.width / 2, 0 );
+    var counter = 0;
+    
+    // Tween step1 virtical
+    var t1 = new TWEEN.Tween(size)
+      .to({
+        height: 200
+      }, 300)
+      .delay(1000)
+      .easing(TWEEN.Easing.Quintic.Out)
+      .onUpdate(function(t){
+        mainRect.segments[0].point.y = mainRect.segments[3].point.y = origin.y + size.height/2;
+        mainRect.segments[1].point.y = mainRect.segments[2].point.y = origin.y - size.height/2;
+        crossLT.position = mainRect.segments[1].point;
+        crossLB.position = mainRect.segments[0].point;
+      })
+      .onComplete(function(){
+        console.log("t1 finish");
+        crossRT.visible = crossRB.visible = true;
+        t2.start();
+      })
+      .start();
+
+    // Tween step2 horizontal
+    var t2 = new TWEEN.Tween(size)
+      .to({
+        width: 600
+      }, 600)
+      .delay(100)
+      .easing(TWEEN.Easing.Quintic.Out)
+      .onUpdate(function(t){
+        mainRect.segments[2].point.x = mainRect.segments[3].point.x = mainRect.segments[0].point.x + size.width;
+        resultGroup.removeChildren();
+        groupIntersect( text, mainRect, resultGroup );
+        resultGroup.fillColor = "white";
+
+        crossRT.position = mainRect.segments[2].point;
+        crossRB.position = mainRect.segments[3].point;
+
+        if( size.width > 200 && counter == 0) {
+          line1.visible = true;
+          counter++;
+        } else if ( size.width > 400 && counter == 1) {
+          line2.visible = true;
+          counter++;
+        }
+      })
+      .onComplete(function(){
+        console.log("t2 finish");
+        t3.start();
+      });
+
+    // Tween step3 dimmer
+    var opac = {opacity:1.0};
+    var t3 = new TWEEN.Tween(opac)
+      .to({opacity: 0.0}, 500)
+      .delay(1000)
+      .easing(TWEEN.Easing.Linear.None)
+      .onUpdate(function(t){
+        group.opacity = opac.opacity;
+      })
+      .onComplete(function() {
+        console.log("t3 finish");
+      })
+
+    // SVG must not include Primitive Tags like <rect >
+    function groupIntersect(target, stencil, resultGroup) {
+      if( target instanceof Group) {
+        for( var i = 0; i < target.children.length; i++) {
+          groupIntersect(target.children[i], stencil, resultGroup);
+        }
+      } else {
+        var intersectPath = target.intersect(stencil);
+        resultGroup.addChild(intersectPath);
+      }
+    }
+
+    function onFrame(event) {
+      stats.begin();
+      TWEEN.update();
+      stats.end();
+    }
+
+    function onMouseDown(event) {
+
+    }
+
+    window.onresize = function() {
+      group.position = view.center;
+      group.position - new Point( text.bounds.width / 2, 0 );
+    }
+
+  </script>
+</head>
+<body style="background:black">
+  <div id="assets">
+    <svg version="1.1" id="svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px"
+    y="0px" width="600px" height="200px" viewBox="0 0 600 200" enable-background="new 0 0 600 200" xml:space="preserve">
+    <path fill="#FFFFFF" d="M62.499,30v64h-20V30H62.499z"/>
+    <path fill="#FFFFFF" d="M93.833,30v64h-20V30H93.833z"/>
+    <polygon fill="#FFFFFF" points="144.226,46.75 144.226,99.607 73.833,170 102.118,170 164.226,107.893 164.226,46.75 "/>
+    <path fill="#FFFFFF" d="M262.499,30v64h-20V30H262.499z"/>
+    <path fill="#FFFFFF" d="M293.833,30v64h-20V30H293.833z"/>
+    <polygon fill="#FFFFFF" points="344.227,46.75 344.227,99.608 273.833,170 302.118,170 364.227,107.893 364.227,46.75 "/>
+    <path fill="#FFFFFF" d="M339,16v28h-20V16H339z"/>
+    <path fill="#FFFFFF" d="M364.226,16v28h-20V16H364.226z"/>
+    <polygon fill="#FFFFFF" points="478.727,41.75 434.875,105.625 462.877,105.625 491.172,61.75 544.227,61.75 544.227,94 
+    482.715,170 511,170 564.227,102.285 564.227,41.75 "/>
+  </svg>
+</div>
+<div id="reload"><a href="javascript:document.location.reload()">reload</a></div>
+<canvas id="canvas" resize="true" keepAlive="true"></canvas>
+</body>
+</html>
